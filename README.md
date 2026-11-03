@@ -20,4 +20,4 @@
 - Русский и английский, ПК и телефон.
 
 ## Установка
-`Extensions → Install extension`: `https://github.com/Ayrissa/Postbox`
+`Extensions → Install extension`: https://github.com/Ayrissa/PostBox.git 
