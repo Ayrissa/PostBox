@@ -16,7 +16,7 @@ function updateBadge() {
 
 function applyEnabled() {
     const on = !!S().enabled;
-    $('#pb_menu_item').toggle(on);
+    $('#pb_menu_item').css('display', on ? '' : 'none');
     $('#pb_enabled').prop('checked', on);
     updateBadge();
 }
@@ -37,7 +37,7 @@ function addMenuItem() {
     if ($('#pb_menu_item').length) return;
     $('#extensionsMenu').append(`<div id="pb_menu_item" class="list-group-item flex-container flexGap5 interactable" tabindex="0">
 <div class="fa-solid fa-envelope extensionsMenuExtensionButton"></div><span id="pb_menu_label">${t('menuItem')}</span><span class="pb-count" style="display:none"></span></div>`);
-    $(document).on('click', '#pb_menu_item', () => { $('#extensionsMenu').hide?.(); openWindow('inbox'); });
+    $(document).on('click', '#pb_menu_item', () => { try { $('#extensionsMenu').hide(); } catch { /* ignore */ } if (S().enabled) openWindow('inbox'); });
 }
 
 const keywordRegex = () => {
@@ -106,33 +106,55 @@ function hideRecaps() {
 let hideTimer = null;
 const hideSoon = (ms = 80) => { clearTimeout(hideTimer); hideTimer = setTimeout(hideRecaps, ms); };
 
+/** Runs one init step; a failure in one step must never stop the menu entry and settings from appearing. */
+function safe(label, fn) {
+    try { fn(); } catch (e) {
+        console.error(`[Postbox] ${label} failed`, e);
+        try { toastr.error(`Postbox (${label}): ${e?.message || e}`); } catch { /* ignore */ }
+    }
+}
+
+/** Waits for a SillyTavern element (mobile layouts can build them later) before using it. */
+function whenReady(selector, fn, tries = 80) {
+    if ($(selector).length) return safe(selector, fn);
+    if (tries > 0) setTimeout(() => whenReady(selector, fn, tries - 1), 500);
+}
+
 jQuery(() => {
-    const st = S();
-    if (st.envStyle && !st.env) st.env = { kind: st.envStyle, stamps: st.deco?.stamps ?? 2 }; // migrate from 0.2.0
-    if (st.images && st.images.size === '1024x1024' && !st.images.ratio) st.images.size = ''; // size is now chosen by ratio
-    fillDefaults(st, DEFAULTS);
-    if (st.custom.seal) { if (!st.custom.seals.length) { st.custom.seals = [st.custom.seal]; st.custom.sealSel = st.custom.seal; } st.custom.seal = ''; } // migrate single seal
-    initUi();
-    applyStyle();
-    addMenuItem();
-    addDrawer();
-    applyEnabled();
+    safe('settings', () => {
+        const st = S();
+        if (st.envStyle && !st.env) st.env = { kind: st.envStyle, stamps: st.deco?.stamps ?? 2 }; // migrate from 0.2.0
+        if (st.images && st.images.size === '1024x1024' && !st.images.ratio) st.images.size = ''; // size is now chosen by ratio
+        fillDefaults(st, DEFAULTS);
+        if (st.custom.seal) { if (!st.custom.seals.length) { st.custom.seals = [st.custom.seal]; st.custom.sealSel = st.custom.seal; } st.custom.seal = ''; } // migrate single seal
+    });
 
-    const ctx = getContext();
-    const ET = ctx.eventTypes || ctx.event_types;
-    ctx.eventSource.on(ET.MESSAGE_RECEIVED, onAnyMessage);
-    if (ET.MESSAGE_SENT) ctx.eventSource.on(ET.MESSAGE_SENT, onAnyMessage);
-    ctx.eventSource.on(ET.CHAT_CHANGED, () => { if (!quiet.v) onChatChanged(); updateBadge(); hideSoon(300); setTimeout(hideRecaps, 1000); });
-    ctx.eventSource.on(ET.CHARACTER_MESSAGE_RENDERED, () => hideSoon());
-    const chatEl = document.getElementById('chat');
-    if (chatEl) new MutationObserver(() => hideSoon(60)).observe(chatEl, { childList: true });
-    bus.addEventListener('enabled', () => hideSoon(0));
+    // 1) the menu entry and the settings block go first, so they exist even if something below fails
+    whenReady('#extensionsMenu', () => { addMenuItem(); applyEnabled(); });
+    whenReady('#extensions_settings2', () => { addDrawer(); applyEnabled(); });
+
+    // 2) the window
+    safe('window', () => { initUi(); applyStyle(); });
+
+    // 3) events
+    safe('events', () => {
+        const ctx = getContext();
+        const ET = ctx.eventTypes || ctx.event_types;
+        ctx.eventSource.on(ET.MESSAGE_RECEIVED, onAnyMessage);
+        if (ET.MESSAGE_SENT) ctx.eventSource.on(ET.MESSAGE_SENT, onAnyMessage);
+        ctx.eventSource.on(ET.CHAT_CHANGED, () => { if (!quiet.v) onChatChanged(); updateBadge(); hideSoon(300); setTimeout(hideRecaps, 1000); });
+        if (ET.CHARACTER_MESSAGE_RENDERED) ctx.eventSource.on(ET.CHARACTER_MESSAGE_RENDERED, () => hideSoon());
+    });
+    safe('chat observer', () => {
+        const chatEl = document.getElementById('chat');
+        if (chatEl) new MutationObserver(() => hideSoon(60)).observe(chatEl, { childList: true });
+        hideSoon(500);
+    });
+
+    bus.addEventListener('enabled', () => { hideSoon(0); if (!S().enabled) closeWindow(); applyEnabled(); });
     bus.addEventListener('recapview', () => hideSoon(0));
-    hideSoon(500);
-
     bus.addEventListener('change', updateBadge);
     bus.addEventListener('lang', () => { $('#pb_menu_label').text(t('menuItem')); $('#pb_enabled_label').text(t('enabledLabel')); $('#pb_open').text(t('openBtn')); });
-    bus.addEventListener('enabled', () => { if (!S().enabled) closeWindow(); applyEnabled(); });
     bus.addEventListener('letter', e => {
         const { sender, letter } = e.detail;
         if (!S().enabled) return;

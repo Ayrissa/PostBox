@@ -372,6 +372,19 @@ export function initUi() {
     root.insertAdjacentHTML('beforeend', '<input type="file" id="pb_file" accept="image/*" hidden>');
     headEl = root.querySelector('#pb_head'); bodyEl = root.querySelector('#pb_body'); footEl = root.querySelector('#pb_foot');
 
+    // follow the *visible* viewport: on phones the on-screen keyboard and browser bars change it
+    const vv = window.visualViewport;
+    const fit = () => {
+        if (!vv) return;
+        root.style.setProperty('--pb-vh', vv.height + 'px');
+        root.style.setProperty('--pb-top', vv.offsetTop + 'px');
+        root.classList.add('pb-vv');
+        if (ui.open && ui.view === 'thread' && document.activeElement?.id === 'pb_input') bodyEl.scrollTop = bodyEl.scrollHeight;
+    };
+    if (vv) { vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit); fit(); }
+    window.addEventListener('orientationchange', () => setTimeout(fit, 300));
+    root.addEventListener('focusin', e => { if (e.target.id === 'pb_input') setTimeout(() => { bodyEl.scrollTop = bodyEl.scrollHeight; }, 300); });
+
     root.addEventListener('click', e => {
         if (e.target === root) return closeWindow();
         const actEl = e.target.closest('[data-act]');
