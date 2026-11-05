@@ -258,6 +258,7 @@ ${row(t('stampsCount'), sel('env.stamps', [[0, '0'], [1, '1'], [2, '2'], [3, '3'
 </div>
 
 <div class="pb-sec"><h4>${t('secRecap')}</h4>
+${getProfiles().length ? row(t('recapProfile'), sel('recap.profile', [['', t('sameAsLetters')], ...getProfiles().map(p => [p.id, esc(p.name)])])) : ''}
 ${row(t('recapMode'), sel('recap.mode', [['short', t('recapShort')], ['detailed', t('recapDetailed')]]))}
 ${chk('recap.invisible', t('recapInvisible'))}</div>
 </div>`;

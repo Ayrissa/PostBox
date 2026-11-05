@@ -33,7 +33,7 @@ export const DEFAULTS = {
     env: { randomEach: false, kind: 'front', color: '', ink: '', type: 'aged', edge: 'deckle', folds: 'thirds', wrinkles: 20, stains: 25, blots: 0, grain: 50, stamps: 2, stickers: true, ornament: 'corners', binding: 'ribbon', postmark: true, seal: true },
     custom: { seal: '', seals: [], sealSel: '', stamps: [], stampSel: [] },
     paper: { randomEach: false, style: 'aged', edge: 'deckle', folds: 'thirds', wrinkles: 30, stains: 30, blots: 15, grain: 55, tilt: true },
-    recap: { mode: 'short', hide: false, invisible: true },
+    recap: { mode: 'short', profile: '', hide: false, invisible: true },
     notify: true,
 };
 
@@ -100,13 +100,16 @@ export function candidates() {
 const chatEndpoint = u => { u = String(u || '').trim().replace(/\/+$/, ''); return /\/chat\/completions$/i.test(u) ? u : u + '/chat/completions'; };
 const baseUrl = u => String(u || '').trim().replace(/\/+$/, '').replace(/\/chat\/completions$/i, '');
 
-export async function callLLM(messages, maxTokens) {
+export async function callLLM(messages, maxTokens, opts = {}) {
     const c = S().conn;
-    if (c.mode === 'profile') {
+    // opts.profileId: use another Connection Manager profile for this request (e.g. for recaps)
+    const override = opts.profileId && getProfiles().some(p => p.id === opts.profileId) ? opts.profileId : '';
+    if (c.mode === 'profile' || override) {
         const svc = getContext().ConnectionManagerRequestService;
         if (!svc) throw new Error(t('noCM'));
-        if (!c.profileId) throw new Error(t('noProfile'));
-        const r = await svc.sendRequest(c.profileId, messages, maxTokens, { stream: false, extractData: true, includePreset: true, includeInstruct: true }, { temperature: c.temperature });
+        const pid = override || c.profileId;
+        if (!pid) throw new Error(t('noProfile'));
+        const r = await svc.sendRequest(pid, messages, maxTokens, { stream: false, extractData: true, includePreset: true, includeInstruct: true }, { temperature: c.temperature });
         return String(r?.content ?? '');
     }
     if (!c.url || !c.model) throw new Error(t('noApi'));
@@ -427,7 +430,7 @@ export async function recapThread(sender) {
     let out = '';
     for (let attempt = 0; attempt < 2 && !out; attempt++) {
         try {
-            const raw = await callLLM([{ role: 'system', content: system[attempt] }, { role: 'user', content: body }], detailed ? 900 : 400);
+            const raw = await callLLM([{ role: 'system', content: system[attempt] }, { role: 'user', content: body }], detailed ? 900 : 400, { profileId: s.recap.profile });
             const txt = String(raw || '').replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
             if (txt && !isRefusal(txt)) out = txt;
         } catch (e) { if (attempt || !SAFETY.test(String(e?.message))) throw e; }
